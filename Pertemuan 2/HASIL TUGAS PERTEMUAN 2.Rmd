@@ -1,0 +1,430 @@
+---
+title: "Tugas Pertemuan ke 2 Praktikum MPDW"
+author: "nailah rifdah thayyibah_m0401241040"
+date: "2026-08-30"
+output: html_document :
+  theme: lumen
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    code_folding: hide
+  pdf_document: default
+  word_document: default
+---
+
+## Library yang dipakai
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+library("readxl")
+```
+
+## Impor datanya
+```{r}
+raw_data <- read_excel("~/data_nai_mpdw.xlsx", col_names = FALSE)
+
+# pisahin kolom teks tunggal jadi dua kolom (Datetime dan PJME_MW)
+data_nai_mpdw <- data.frame(
+  Datetime = sub(",.*", "", raw_data[[1]]),
+  PJME_MW  = as.numeric(sub(".*,", "", raw_data[[1]])),
+  Period   = 1:nrow(raw_data)
+)
+
+# tampilin 5 data pertama
+head(data_nai_mpdw)
+```
+
+## Eksplor Datanya
+```{r}
+View(data_nai_mpdw)
+str(data_nai_mpdw)
+dim(data_nai_mpdw)
+```
+### Ubah datanya jadi time series
+```{r}
+data_nai_mpdw.ts <- ts(data_nai_mpdw$PJME_MW)
+```
+
+### Liatin summary datanya
+```{r}
+summary(data_nai_mpdw.ts)
+```
+### Buatin plot deret waktunya
+```{r}
+ts.plot(data_nai_mpdw.ts, xlab="Time Period ", ylab="PJME_MW", 
+        main = "Time Series Plot of PJME_MW")
+points(data_nai_mpdw.ts)
+
+#simpan plot
+dev.copy(png, "plot_data_nai.png")
+dev.off()
+```
+## MOVING AVERAGE
+```{r}
+# itungin jumlah data
+n <- nrow(data_nai_mpdw)
+
+# tentuin batas 80%
+n_train <- floor(0.8 * n)
+
+# bagi datanya
+training_ma <- data_nai_mpdw[1:n_train, ]
+testing_ma  <- data_nai_mpdw[(n_train+1):n, ]
+
+# ubah ke time series
+train_ma.ts <- ts(training_ma$PJME_MW)
+test_ma.ts  <- ts(testing_ma$PJME_MW)
+```
+
+```{r}
+#eksplorasi semua data
+plot(data_nai_mpdw.ts, col="green",main="Plot semua data")
+points(data_nai_mpdw.ts)
+
+#eksplorasi data latih doang
+plot(train_ma.ts, col="cyan",main="Plot data latih")
+points(train_ma.ts)
+
+#eksplorasi data uji doang
+plot(test_ma.ts, col="pink",main="Plot data uji")
+points(test_ma.ts)
+```
+```{r}
+# eksplor datanya lagi
+library(ggplot2)
+ggplot() + 
+  geom_line(data = training_ma, aes(x = Period, y = PJME_MW, col = "Data Latih")) +
+  geom_line(data = testing_ma, aes(x = Period, y = PJME_MW, col = "Data Uji")) +
+  labs(x = "Periode Waktu", y = "PJME_MW", color = "Legend") +
+    scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
+                        values = c("green", "pink")) + 
+  theme_bw() + theme(legend.position = "bottom",
+                     plot.caption = element_text(hjust=0.5, size=12))
+```
+
+## SINGLE MOVING AVERAGE 
+```{r}
+# pemulusan pake parameter m=4
+data.sma<-SMA(train_ma.ts, n=4)
+data.sma
+```
+```{r}
+data.ramal<-c(NA,data.sma)
+data.ramal #forecast 1 periode ke depan
+```
+```{r}
+# nilai peramalan pas periode ke t+1 jadi hasil peramalan 1 periode kedepan
+n_test <- length(test_ma.ts)
+data.gab<-cbind(
+  aktual=c(data_nai_mpdw.ts),
+  pemulusan=c(data.sma,rep(NA,n_test)),
+  ramalan=c(data.ramal,rep(data.ramal[length(data.ramal)],n_test - 1)))
+
+head(data.gab)
+```
+
+```{r}
+# peramalan sebanyak jumlah data uji
+ts.plot(data_nai_mpdw.ts, xlab="Time Period ", ylab="PJME_MW", main= "SMA N=4 Data PJME")
+points(data_nai_mpdw.ts)
+lines(data.gab[,2],col="green",lwd=2)
+lines(data.gab[,3],col="pink",lwd=2)
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=8, col=c("black","green","pink"), cex=0.5)
+```
+### itung akurasi data latih
+```{r}
+error_train.sma = train_ma.ts-data.ramal[1:length(train_ma.ts)]
+
+SSE_train.sma = sum(error_train.sma[5:length(train_ma.ts)]^2)
+MSE_train.sma = mean(error_train.sma[5:length(train_ma.ts)]^2)
+MAPE_train.sma = mean(abs((error_train.sma[5:length(train_ma.ts)]/train_ma.ts[5:length(train_ma.ts)])*100))
+
+akurasi_train.sma <- matrix(c(SSE_train.sma, MSE_train.sma, MAPE_train.sma))
+row.names(akurasi_train.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.sma) <- c("Akurasi m = 4")
+akurasi_train.sma
+```
+### itung akurasi data uji
+```{r}
+ramalan_uji_sma <- tail(data.gab[, 3], n_test)
+error_test.sma = test_ma.ts - ramalan_uji_sma
+
+SSE_test.sma = sum(error_test.sma^2, na.rm=TRUE)
+MSE_test.sma = mean(error_test.sma^2, na.rm=TRUE)
+MAPE_test.sma = mean(abs((error_test.sma/test_ma.ts)*100), na.rm=TRUE)
+
+akurasi_test.sma <- matrix(c(SSE_test.sma, MSE_test.sma, MAPE_test.sma))
+row.names(akurasi_test.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.sma) <- c("Akurasi m = 4")
+akurasi_test.sma
+```
+
+## EXPONENTIAL SMOOTHING 
+```{r}
+#bagi datanya
+train.ts <- train_ma.ts
+test.ts  <- test_ma.ts
+```
+
+### Single Exponential Smoothing
+```{r}
+#SES Optimum dengan alpha = NULL
+ses.opt <- ses(train.ts, h = length(test.ts), alpha = NULL)
+plot(ses.opt)
+ses.opt
+```
+### Akurasi data uji
+```{r}
+eopt <- as.numeric(ses.opt$mean) - as.numeric(test.ts)
+
+SSEtestingopt  <- sum(eopt^2,  na.rm = TRUE)
+MSEtestingopt  <- mean(eopt^2, na.rm = TRUE)
+RMSEtestingopt <- sqrt(MSEtestingopt)
+
+akurasitesting_opt <- matrix(c(SSEtestingopt, MSEtestingopt, RMSEtestingopt),
+                             nrow = 3,
+                             dimnames = list(c("SSE", "MSE", "RMSE"), "Nilai Optimum"))
+akurasitesting_opt
+```
+### Double Exponential Smoothing
+```{r}
+# DES dengan parameter manual (alpha = 0.2, beta = 0.2)
+des.1 <- HoltWinters(train.ts, gamma = FALSE, beta = 0.2, alpha = 0.2)
+plot(des.1)
+
+ramalandes1 <- forecast(des.1, h = n_test)
+ramalandes1
+
+# DES dengan parameter manual (alpha = 0.6, beta = 0.3)
+des.2 <- HoltWinters(train.ts, gamma = FALSE, beta = 0.3, alpha = 0.6)
+plot(des.2)
+
+ramalandes2 <- forecast(des.2, h = n_test)
+ramalandes2
+```
+
+### Visualisasi perbandingan data latih dan uji
+```{r}
+plot(data_nai_mpdw.ts, main = "Plot DES Data PJME")
+lines(des.1$fitted[,1], lty = 2, col = "green")
+lines(ramalandes1$mean, col = "pink")
+```
+### dapatin nilai parameter optimum
+```{r}
+des.opt <- HoltWinters(train.ts, gamma = FALSE)
+des.opt
+plot(des.opt)
+
+ramalandesopt <- forecast(des.opt, h = n_test)
+ramalandesopt
+```
+
+### Akurasi data latih
+```{r}
+ssedes.train1 <- des.1$SSE
+msedes.train1 <- ssedes.train1 / length(train.ts)
+sisaandes1 <- ramalandes1$residuals
+
+mapedes.train1 <- sum(abs(sisaandes1[3:length(train.ts)] / train.ts[3:length(train.ts)]) * 100) / length(train.ts)
+
+akurasides.1 <- matrix(c(ssedes.train1, msedes.train1, mapedes.train1))
+row.names(akurasides.1) <- c("SSE", "MSE", "MAPE")
+colnames(akurasides.1) <- c("Akurasi alpha=0.2 dan beta=0.2")
+akurasides.1
+
+ssedes.train2 <- des.2$SSE
+msedes.train2 <- ssedes.train2 / length(train.ts)
+sisaandes2 <- ramalandes2$residuals
+
+mapedes.train2 <- sum(abs(sisaandes2[3:length(train.ts)] / train.ts[3:length(train.ts)]) * 100) / length(train.ts)
+
+akurasides.2 <- matrix(c(ssedes.train2, msedes.train2, mapedes.train2))
+row.names(akurasides.2) <- c("SSE", "MSE", "MAPE")
+colnames(akurasides.2) <- c("Akurasi alpha=0.6 dan beta=0.3")
+akurasides.2
+```
+
+### Akurasi data
+```{r}
+# Menghitung akurasi data uji (testing) secara manual pakai nilai numeriknya
+forecast_val <- as.numeric(ramalandesopt$mean)
+actual_val   <- as.numeric(test.ts)
+
+# Menghitung SSE, MSE, dan MAPE data uji
+sse_test <- sum((forecast_val - actual_val)^2, na.rm = TRUE)
+mse_test <- mean((forecast_val - actual_val)^2, na.rm = TRUE)
+mape_test <- mean(abs((forecast_val - actual_val) / actual_val), na.rm = TRUE) * 100
+
+# Menampilkan hasil
+cat("SSE Testing:", sse_test, "\n")
+cat("MSE Testing:", mse_test, "\n")
+cat("MAPE Testing:", mape_test, "%\n")
+```
+## Seasonal Smoothing
+```{r}
+# bagi datanya
+n_total <- nrow(data3)
+n_train <- 8000 # Contoh pembagian 8000 data latih
+training <- data3[1:n_train, 2]
+testing  <- data3[(n_train + 1):n_total, 2]
+
+# pakai frekuensi
+training.ts <- ts(training, frequency = 24)
+testing.ts  <- ts(testing, frequency = 24)
+
+# eksplorasi dengan plot data deret waktu
+plot(data3.ts, col="green", main="Plot semua data")
+points(data3.ts)
+
+plot(training.ts, col="pink", main="Plot data latih")
+points(training.ts)
+
+plot(testing.ts, col="cyan", main="Plot data uji")
+points(testing.ts)
+```
+```{r}
+# Membersihkan data dari NA atau nilai kosong
+training_clean <- na.omit(as.numeric(training))
+
+# Definisikan ulang training.ts dengan data yang sudah bersih
+training.ts <- ts(training_clean, frequency = 24)
+
+# Jalankan kembali fungsi HoltWinters setelah data bersih
+winter1 <- HoltWinters(training.ts, alpha=0.2, beta=0.1, gamma=0.1, seasonal = "additive")
+```
+
+### Winter Aditif
+```{r}
+# Pemulusan dengan winter aditif 
+winter1 <- HoltWinters(training.ts, alpha=0.2, beta=0.1, gamma=0.1, seasonal = "additive")
+winter1$fitted
+xhat1 <- winter1$fitted[,2]
+
+winter1.opt <- HoltWinters(training.ts, alpha=NULL, beta=NULL, gamma=NULL, seasonal = "additive")
+winter1.opt
+winter1.opt$fitted
+xhat1.opt <- winter1.opt$fitted[,2]
+
+# Forecast
+forecast1     <- predict(winter1, n.ahead = length(testing.ts))
+forecast1.opt <- predict(winter1.opt, n.ahead = length(testing.ts))
+
+# Plot time series
+plot(training.ts, main="Winter Aditif", type="l", col="black", pch=12)
+lines(xhat1, type="l", col="pink")
+lines(xhat1.opt, type="l", col="green")
+lines(forecast1, type="l", col="pink")
+lines(forecast1.opt, type="l", col="green")
+legend("topleft", c("Actual Data", "winter1", "winter1.opt"), cex=0.5,
+       col=c("black", "pink", "green"), lty=1)
+
+# Akurasi data training
+SSE1 <- winter1$SSE
+MSE1 <- winter1$SSE / length(training.ts)
+RMSE1 <- sqrt(MSE1)
+akurasi1 <- matrix(c(SSE1, MSE1, RMSE1))
+row.names(akurasi1) <- c("SSE", "MSE", "RMSE")
+colnames(akurasi1) <- c("Akurasi")
+akurasi1
+
+SSE1.opt <- winter1.opt$SSE
+MSE1.opt <- winter1.opt$SSE / length(training.ts)
+RMSE1.opt <- sqrt(MSE1.opt)
+akurasi1.opt <- matrix(c(SSE1.opt, MSE1.opt, RMSE1.opt))
+row.names(akurasi1.opt) <- c("SSE1.opt", "MSE1.opt", "RMSE1.opt")
+colnames(akurasi1.opt) <- c("Akurasi")
+akurasi1.opt
+
+akurasi1.train = data.frame(Model_Winter = c("Winter 1","Winter1 optimal"),
+                            Nilai_SSE = c(SSE1, SSE1.opt),
+                            Nilai_MSE = c(MSE1, MSE1.opt), 
+                            Nilai_RMSE = c(RMSE1, RMSE1.opt))
+akurasi1.train
+
+# Akurasi Data Testing
+forecast1.df   <- data.frame(forecast = as.numeric(forecast1))
+testing.ts.df  <- data.frame(testing = as.numeric(testing.ts))
+selisih1       <- forecast1.df - testing.ts.df
+SSEtesting1    <- sum(selisih1^2, na.rm = TRUE)
+MSEtesting1    <- SSEtesting1 / length(testing.ts)
+
+forecast1.opt.df <- data.frame(forecast = as.numeric(forecast1.opt))
+selisih1.opt     <- forecast1.opt.df - testing.ts.df
+SSEtesting1.opt  <- sum(selisih1.opt^2, na.rm = TRUE)
+MSEtesting1.opt  <- SSEtesting1.opt / length(testing.ts)
+
+akurasi_testing <- data.frame(
+  Model = c("Model1", "Model Optimum"),
+  SSE   = c(SSEtesting1, SSEtesting1.opt),
+  MSE   = c(MSEtesting1, MSEtesting1.opt)
+)
+akurasi_testing
+```
+### Winter Multiplikatif
+```{r}
+# Pemulusan dengan winter multiplikatif 
+winter2 <- HoltWinters(training.ts, alpha=0.2, beta=0.1, gamma=0.3, seasonal = "multiplicative")
+winter2$fitted
+xhat2 <- winter2$fitted[,2]
+
+winter2.opt <- HoltWinters(training.ts, alpha=NULL, beta=NULL, gamma=NULL, seasonal = "multiplicative")
+winter2.opt$fitted
+xhat2.opt <- winter2.opt$fitted[,2]
+
+# Forecast
+forecast2     <- predict(winter2, n.ahead = length(testing.ts))
+forecast2.opt <- predict(winter2.opt, n.ahead = length(testing.ts))
+
+# Plot time series
+plot(training.ts, main="Winter Multiplikatif", type="l", col="black", pch=12)
+lines(xhat2, type="l", col="pink")
+lines(xhat2.opt, type="l", col="green")
+lines(forecast2, type="l", col="pink")
+lines(forecast2.opt, type="l", col="green")
+legend("topleft", c("Actual Data", "winter2", "winter2.opt"), cex=0.5,
+       col=c("black", "pink", "green"), lty=1)
+
+# Akurasi data training
+SSE2 <- winter2$SSE
+MSE2 <- winter2$SSE / length(training.ts)
+RMSE2 <- sqrt(MSE2)
+akurasi2_matrix <- matrix(c(SSE2, MSE2, RMSE2))
+row.names(akurasi2_matrix) <- c("SSE2", "MSE2", "RMSE2")
+colnames(akurasi2_matrix) <- c("Akurasi alpha=0.2")
+akurasi2_matrix
+
+SSE2.opt <- winter2.opt$SSE
+MSE2.opt <- winter2.opt$SSE / length(training.ts)
+RMSE2.opt <- sqrt(MSE2.opt)
+akurasi2_opt_matrix <- matrix(c(SSE2.opt, MSE2.opt, RMSE2.opt))
+row.names(akurasi2_opt_matrix) <- c("SSE2.opt", "MSE2.opt", "RMSE2.opt")
+colnames(akurasi2_opt_matrix) <- c("Akurasi")
+akurasi2_opt_matrix
+
+akurasi2.train = data.frame(Model_Winter = c("Winter 2","Winter2 optimal"),
+                            Nilai_SSE = c(SSE2, SSE2.opt),
+                            Nilai_MSE = c(MSE2, MSE2.opt),
+                            Nilai_RMSE = c(RMSE2, RMSE2.opt))
+akurasi2.train
+
+# Akurasi Data Testing
+forecast2.df   <- data.frame(forecast = as.numeric(forecast2))
+selisih2       <- forecast2.df - testing.ts.df
+SSEtesting2    <- sum(selisih2^2, na.rm = TRUE)
+MSEtesting2    <- SSEtesting2 / length(testing.ts)
+
+forecast2.opt.df <- data.frame(forecast = as.numeric(forecast2.opt))
+selisih2.opt     <- forecast2.opt.df - testing.ts.df
+SSEtesting2.opt  <- sum(selisih2.opt^2, na.rm = TRUE)
+MSEtesting2.opt  <- SSEtesting2.opt / length(testing.ts)
+
+akurasi_testing2 <- data.frame(
+  Model = c("Model2", "Model2 Optimal"),
+  SSE   = c(SSEtesting2, SSEtesting2.opt),
+  MSE   = c(MSEtesting2, MSEtesting2.opt)
+)
+akurasi_testing2
+```
+
