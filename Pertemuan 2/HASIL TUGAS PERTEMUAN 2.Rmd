@@ -2,14 +2,7 @@
 title: "Tugas Pertemuan ke 2 Praktikum MPDW"
 author: "nailah rifdah thayyibah_m0401241040"
 date: "2026-08-30"
-output: html_document :
-  theme: lumen
-    toc: true
-    toc_depth: 2
-    toc_float: true
-    code_folding: hide
-  pdf_document: default
-  word_document: default
+output: html_document
 ---
 
 ## Library yang dipakai
