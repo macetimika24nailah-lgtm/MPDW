@@ -1,0 +1,148 @@
+---
+title: "Pratikum 3 - Regresi Spasial"
+author: "Nailah Rifdah Thayyibah-M0401241040"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+# 1) panggil library yg dipakai
+```{r}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+library(rio)
+```
+
+# 2) impor datanya
+
+```{r}
+data <- rio::import("C:/Users/Nailah Rifdah Aqila/Downloads/NewDelhi_Air_quality.csv")
+data_sub <- data.frame(Yt = data$AQI, Xt = data$pm25)
+
+train <- data_sub[1:57,]
+test <- data_sub[58:72,]
+
+
+train.ts <- ts(train)
+test.ts <- ts(test)
+data.ts <- ts(data_sub)
+```
+
+# 3) model koyck
+
+```{r}
+model.koyck <- koyckDlm(x = train$Xt, y = train$Yt)
+summary(model.koyck)
+
+fore.koyck <- forecast(model = model.koyck, x = test$Xt, h = 15)
+fore.koyck
+
+mape.koyck <- MAPE(fore.koyck$forecasts, test$Yt)
+cat("MAPE Model Koyck:", mape.koyck, "\n")
+```
+Berdasarkan hasil output model Koyck di atas, peubah Yt-1 dan peubah Xt terbukti berpengaruh signifikan terhadap Yt karena nilai p-valuenya kurang dari 0.05. Selain itu, nilai R-squared yang mencapai 0.83 menunjukkan bahwa sekitar 83% variasi dari data berhasil dijelaskan dengan sangat baik oleh model ini. Dari hasil peramalan untuk 15 periode ke depan, diperoleh nilai MAPE sebesar 0.139 atau sekitar 13.9%, yang berarti tingkat kesalahan peramalan model Koyck ini tergolong cukup akurat.
+
+# 4) Regression with Distributed Lag (DLM)
+
+```{r}
+finiteDLMauto(formula = Yt ~ Xt,
+              data = data.frame(train), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+
+model.dlm.opt <- dlm(x = train$Xt, y = train$Yt, q = 1)
+summary(model.dlm.opt)
+
+fore.dlm.opt <- forecast(model = model.dlm.opt, x = test$Xt, h = 15)
+mape.dlm.opt <- MAPE(fore.dlm.opt$forecasts, test$Yt)
+cat("MAPE Model DLM Optimum:", mape.dlm.opt, "\n")
+```
+
+Berdasarkan hasil output pencarian lag optimum di atas, nilai AIC terkecil sebesar 181.4052 dicapai pada lag q = 10. Hal ini menunjukkan bahwa model Distributed Lag (DLM) terbaik dan paling optimum untuk data ini adalah dengan melibatkan variabel X hingga 10 periode ke belakang (q = 10).
+
+# 5) Autoregressive Distributed Lag (ARDL)
+
+```{r}
+model.ardl.opt <- ardlBoundOrders(data = data.frame(data_sub), ic = "AIC", formula = Yt ~ Xt)
+
+min_p <- c()
+for(i in 1:6){
+  min_p[i] <- min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt <- which(min_p == min(min_p, na.rm = TRUE))
+p_opt <- which(model.ardl.opt$Stat.table[[q_opt]] == min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+
+data.frame("Lag_Y_opt(q)" = q_opt, "Lag_X_opt(p)" = p_opt, "AIC" = model.ardl.opt$min.Stat)
+
+model.ardl <- ardlDlm(formula = Yt ~ Xt, data = train, p = p_opt, q = q_opt)
+summary(model.ardl)
+
+fore.ardl <- forecast(model = model.ardl, x = test$Xt, h = 15)
+mape.ardl <- MAPE(fore.ardl$forecasts, test$Yt)
+cat("MAPE Model ARDL Optimum:", mape.ardl, "\n")
+```
+
+Berdasarkan hasil output model ARDL optimum di atas, variabel X saat ini (Xt) serta variabel Yt1 dan Yt-2 terbukti berpengaruh signifikan terhadap Yt karena memiliki nilai p-value kurang dari 0.05. Selain itu, nilai Multiple R-squared yang sangat tinggi yaitu 0.9604 menunjukkan bahwa sekitar 96.04% variasi dari data berhasil dijelaskan dengan sangat baik oleh model ARDL ini. Dari hasil peramalan, diperoleh nilai MAPE sebesar 0.2815 atau sekitar 28.15%, yang mengindikasikan tingkat akurasi peramalan model ARDL optimum pada data pengujian.
+
+# 6) evaluasi model asumsi (dynlm)
+
+```{r}
+cons_lm1 <- dynlm(Yt ~ Xt + L(Xt), data = train.ts)
+summary(cons_lm1)
+```
+
+Berdasarkan hasil output model dynlm di atas, variabel saat ini (Xt) dan variabel masa lalu (LXt)) terbukti berpengaruh signifikan terhadap Yt karena nilai p-valuenya masing-masing kurang dari 0.05. Meskipun nilai Multiple R-squared sebesar 0.1505 tergolong kecil, model ini tetap sah digunakan untuk melanjutkan pengujian asumsi sisaan (autokorelasi, heteroskedastisitas, dan normalitas).
+
+# 7) uji autokorelasi (durbin-watson)
+
+```{r}
+dwtest(cons_lm1)
+```
+Berdasarkan hasil uji Durbin-Watson di atas, diperoleh nilai DW = 0.36907 dengan p-value sebesar 3.414  10^-16 (jauh di bawah 0.05). Karena p-value kurang dari 0.05, maka H0 ditolak, yang berarti sisaan model ini mengandung masalah autokorelasi positif yang signifikan.\
+
+# 8) uji heteroskedastisitas 
+
+```{r}
+bptest(cons_lm1)
+```
+
+Berdasarkan hasil uji Breusch-Pagan di atas, diperoleh nilai BP = 8.3784 dengan p-value sebesar 0.01516 (kurang dari 0.05). Karena p-value kurang dari taraf nyata 5%, maka H0 ditolak, yang berarti ragam sisaan model ini tidak homogen (terdapat masalah heteroskedastisitas).
+
+# 9) uji normalitas sisaan (shappiro walk)
+
+```{r}
+shapiro.test(residuals(cons_lm1))
+```
+
+
+
+# 10) perbandinga peforma model dan mapenya berapa
+
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm.opt, mape.ardl))
+row.names(akurasi) <- c("Koyck", "DLM Optimum", "ARDL Optimum")
+colnames(akurasi) <- c("MAPE")
+print(akurasi)
+```
+
+Berdasarkan tabel perbandingan akurasi di atas, model Koyck memiliki nilai MAPE terkecil yaitu sebesar 0.1394956 (atau sekitar 13.95%), diikuti oleh model DLM Optimum sebesar 0.1748723 (17.49%), dan terakhir model ARDL Optimum sebesar 0.2814882 (28.15%). Oleh karena itu, model Koyck merupakan model terbaik yang paling akurat dalam melakukan peramalan untuk data kualitas udara ini karena menghasilkan tingkat kesalahan peramalan yang paling rendah di antara ketiga metode.
+
+#b visualisasi
+
+```{r}
+par(mfrow=c(1,1))
+plot(test$Xt, test$Yt, type="b", col="black", lwd=2, 
+     ylab="Nilai AQI (Y)", xlab="Nilai PM2.5 (X)", main="Perbandingan Model Peramalan Kualitas Udara")
+
+lines(test$Xt, fore.koyck$forecasts, col="red", type="b", pch=16)
+lines(test$Xt, fore.dlm.opt$forecasts, col="blue", type="b", pch=17)
+lines(test$Xt, fore.ardl$forecasts, col="green", type="b", pch=18)
+
+legend("topleft", legend=c("Aktual", "Koyck", "DLM", "ARDL"),
+       col=c("black","red","blue","green"), lty=1, pch=c(1,16,17,18), cex=0.8, inset=0.02)
+```
+
+Berdasarkan grafik perbandingan model peramalan kualitas udara di atas, garis hitam menunjukkan data aktual, sedangkan garis berwarna merah (Koyck), biru (DLM), dan hijau (ARDL) menunjukkan hasil peramalan dari masing-masing model. Terlihat bahwa pola peramalan dari model Koyck (merah) dan DLM (biru) cenderung lebih stabil dan mendekati kisaran nilai aktual dibandingkan model ARDL. Hal ini selaras dengan nilai MAPE sebelumnya, di mana model Koyck keluar sebagai model yang paling akurat karena jalurnya paling dekat dengan fluktuasi data aktual.
