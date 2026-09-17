@@ -1,0 +1,198 @@
+---
+title: "PRAKTIKUM  5 MPDW"
+author: "nailah rifdah thayyibah_m0401241040"
+date: "2026-09-17"
+output: html_document
+---
+
+# PROSES MA(2)
+# Langkah 1: Persiapan dan Membaca Data di R
+```{r}
+# library yang dipakai
+library(readxl)
+library(forecast)
+library(TSA)
+
+# 1. Membaca file excel
+raw_data <- read_excel("~/data_nai_mpdw.xlsx", col_names = FALSE)
+
+# pisahin kolom Timestamp dan Value (karena tergabung dengan koma)
+split_col <- do.call(rbind, strsplit(as.character(raw_data[[1]]), ","))
+data_nilai <- as.numeric(split_col[, 2])
+
+#ambil 300 data pertama
+y <- ts(data_nilai[1:300])
+
+print(paste("Jumlah data yang dianalisis:", length(y)))
+```
+# Langkah 2: Plot Time Series, ACF, PACF, dan EACF (Uji Stasioneran)
+```{r}
+# 1. Plot Time Series
+plot(y, main = "Plot Time Series Data Asli (300 Data Pertama)", 
+     ylab = "Nilai Y", xlab = "Waktu / Indeks", col = "blue", lwd = 1.5)
+
+# 2. Plot ACF dan PACF
+par(mfrow = c(1, 2))
+Acf(y, main = "Plot ACF Data Asli")
+Pacf(y, main = "Plot PACF Data Asli")
+par(mfrow = c(1, 1))
+
+# 3. Plot EACF untuk membantu identifikasi model ARMA(p,q)
+eacf(y)
+```
+# Langkah 3: Membuat Scatterplot $Y_t$ dengan Lag-nya ($Y_{t-1}, Y_{t-2}, Y_{t-3}$)
+```{r}
+# Membuat jendela grafik 1 baris 3 kolom
+par(mfrow = c(1, 3))
+
+# Yt dengan Y{t1}
+plot(lag(y, -1), y, main = "Yt vs Y{t1}", 
+     xlab = "Y{t1}", ylab = "Yt", col = "darkgreen")
+abline(reg = lm(y ~ lag(y, -1)), col = "red")
+
+# Yt dengan Yt2
+plot(lag(y, -2), y, main = "Yt vs Yt2", 
+     xlab = "Yt2", ylab = "Yt", col = "darkgreen")
+abline(reg = lm(y ~ lag(y, -2)), col = "red")
+
+# Yt dengan Yt3
+plot(lag(y, -3), y, main = "Yt vs Yt3", 
+     xlab = "Yt3", ylab = "Yt", col = "darkgreen")
+abline(reg = lm(y ~ lag(y, -3)), col = "red")
+
+par(mfrow = c(1, 1))
+```
+# Langkah 4: Menghitung Nilai Autokorelasi (Empiris/Data Riil)
+```{r}
+# Menghitung koefisien autokorelasi (ACF) untuk lag 1, 2, dan 3 dari data
+hasil_acf <- acf(y, lag.max = 3, plot = FALSE)
+
+cat("Nilai Autokorelasi Empiris dari Data:\n")
+cat("Autokorelasi Lag 1 (r_1):", hasil_acf$acf[2], "\n")
+cat("Autokorelasi Lag 2 (r_2):", hasil_acf$acf[3], "\n")
+cat("Autokorelasi Lag 3 (r_3):", hasil_acf$acf[4], "\n")
+```
+
+# PROSES AR(2)
+# Langkah 1: Persiapan dan Membaca Data di R
+```{r}
+# 1. Membaca data Excel
+raw_data <- read_excel("~/data_nai_mpdw.xlsx", col_names = FALSE)
+
+# Memisahkan kolom Timestamp dan Value, lalu mengambil 300 data pertama
+split_col <- do.call(rbind, strsplit(as.character(raw_data[[1]]), ","))
+data_nilai <- as.numeric(split_col[, 2])
+y <- ts(data_nilai[1:300])
+
+print(paste("Jumlah data yang dianalisis:", length(y)))
+```
+# Langkah 2: Plot Time Series, ACF, PACF, dan EACF
+```{r}
+par(mfrow = c(2, 2))
+plot(y, main = "Time Series Data Asli (AR(2) Analysis)", col = "darkgreen", ylab = "Yt")
+Acf(y, main = "Plot ACF Data Asli")
+Pacf(y, main = "Plot PACF Data Asli")
+eacf(y) # Identifikasi model tentatif
+par(mfrow = c(1, 1))
+```
+# Langkah 3: Scatterplot Yt dengan Lag-nnya (Lag 1, 2, 3)
+```{r}
+par(mfrow = c(1, 3))
+
+# Yt dengan Yt1
+plot(lag(y, -1), y, main = "Yt vs Yt1", 
+     xlab = "Yt1", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -1)), col = "red")
+
+# Yt dengan Yt2
+plot(lag(y, -2), y, main = "Yt vs Yt2", 
+     xlab = "Yt2", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -2)), col = "red")
+
+# Yt dengan Yt3
+plot(lag(y, -3), y, main = "Yt vs Yt3", 
+     xlab = "Yt3", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -3)), col = "red")
+  
+par(mfrow = c(1, 1))
+```
+# Langkah 4: Menghitung Autokorelasi Empiris & Estimasi Model AR(2)
+
+```{r}
+hasil_acf <- acf(y, lag.max = 3, plot = FALSE)
+cat("--- AUTOKORELASI EMPIRIS DARI DATA ---\n")
+cat("Autokorelasi Lag 1 (r_1):", hasil_acf$acf[2], "\n")
+cat("Autokorelasi Lag 2 (r_2):", hasil_acf$acf[3], "\n")
+cat("Autokorelasi Lag 3 (r_3):", hasil_acf$acf[4], "\n\n")
+
+# melihat estimasi parameter AR(2) langsung dari data (Fitting model AR(2))
+model_ar2_fitted <- Arima(y, order=c(2,0,0))
+cat("--- ESTIMASI PARAMETER MODEL AR(2) DARI DATA ---\n")
+print(model_ar2_fitted)
+```
+# PROSES ARMA(2,2)
+# Langkah 1: Persiapan dan Membaca Data di R
+```{r}
+# Load library yang dibutuhkan
+library(readxl)
+library(forecast)
+library(TSA)
+
+# 1. Membaca data file Excel
+raw_data <- read_excel("~/data_nai_mpdw.xlsx", col_names = FALSE)
+
+# Memisahkan kolom Timestamp dan Value, lalu mengambil 300 data pertama
+split_col <- do.call(rbind, strsplit(as.character(raw_data[[1]]), ","))
+data_nilai <- as.numeric(split_col[, 2])
+y <- ts(data_nilai[1:300])
+
+print(paste("Jumlah data yang dianalisis:", length(y)))
+```
+# Langkah 2: Plot Time Series, ACF, PACF, dan EACF
+```{r}
+par(mfrow = c(2, 2))
+plot(y, main = "Time Series Data Asli (ARMA(2,2) Analysis)", col = "purple", ylab = "Y_t")
+Acf(y, main = "Plot ACF Data Asli")
+Pacf(y, main = "Plot PACF Data Asli")
+eacf(y) # Identifikasi model tentatif ARMA(p,q)
+par(mfrow = c(1, 1))
+```
+
+# Langkah 3: Scatterplot Yt dengan Lag-nnya (Lag 1, 2, 3)
+```{r}
+par(mfrow = c(1, 3))
+
+# Yt dengan Yt1
+plot(lag(y, -1), y, main = "Yt vs Yt1", 
+     xlab = "Yt1", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -1)), col = "red")
+
+# Yt dengan Yt2
+plot(lag(y, -2), y, main = "Yt vs Yt2", 
+     xlab = "Yt2", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -2)), col = "red")
+
+# Yt dengan Yt3
+plot(lag(y, -3), y, main = "Yt vs Yt3", 
+     xlab = "Yt3", ylab = "Yt", col = "blue")
+abline(reg = lm(y ~ lag(y, -3)), col = "red")
+
+par(mfrow = c(1, 1))
+```
+# Langkah 4: Menghitung Autokorelasi Empiris & Estimasi Model ARMA(2,2)
+
+```{r}
+# Menghitung nilai autokorelasi empiris dari data untuk lag 1, 2, dan 3
+hasil_acf <- acf(y, lag.max = 3, plot = FALSE)
+cat("--- AUTOKORELASI EMPIRIS DARI DATA ---\n")
+cat("Autokorelasi Lag 1 (r_1):", hasil_acf$acf[2], "\n")
+cat("Autokorelasi Lag 2 (r_2):", hasil_acf$acf[3], "\n")
+cat("Autokorelasi Lag 3 (r_3):", hasil_acf$acf[4], "\n\n")
+
+# Melakukan estimasi/fitting model ARMA(2,2) langsung pada data
+model_arma22_fitted <- Arima(y, order = c(2, 0, 2))
+cat("--- HASIL ESTIMASI MODEL ARMA(2,2) PADA DATA ---\n")
+print(model_arma22_fitted)
+```
+
+
